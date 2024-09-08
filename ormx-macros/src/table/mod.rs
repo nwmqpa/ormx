@@ -74,7 +74,7 @@ impl<B: Backend> TableField<B> {
             format!(
                 "{q}{}{q} AS {q}{}!: {}{q}",
                 self.column_name,
-                self.field.to_string(),
+                self.field,
                 self.ty.to_token_stream()
             )
         } else if self.field == self.column_name {

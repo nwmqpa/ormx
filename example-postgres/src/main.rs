@@ -3,9 +3,6 @@ use log::LevelFilter;
 use ormx::{Delete, Insert, Table};
 use sqlx::PgPool;
 
-// To run this example, first run `/scripts/postgres.sh` to start postgres in a docker container and
-// write the database URL to `.env`. Then, source `.env` (`. .env`) and run `cargo run`
-
 mod query2;
 
 #[tokio::main]
@@ -62,6 +59,7 @@ async fn main() -> anyhow::Result<()> {
     .await?;
 
     log::info!("reload the user, in case it has been modified");
+    new.email.clear();
     new.reload(&db).await?;
 
     log::info!("use the improved query macro for searching users");

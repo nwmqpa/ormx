@@ -57,9 +57,7 @@ pub fn impl_insert(table: &Table<MariaBackend>) -> TokenStream {
 
 fn insert_sql(table: &Table<MariaBackend>, insert_fields: &[&TableField<MariaBackend>]) -> String {
     let columns = insert_fields.iter().map(|field| field.column()).join(", ");
-    let fields = MariaBindings::default()
-        .take(insert_fields.len())
-        .join(", ");
+    let fields = MariaBindings.take(insert_fields.len()).join(", ");
     let returning_fields = table
         .default_fields()
         .map(TableField::fmt_for_select)

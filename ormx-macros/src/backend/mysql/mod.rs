@@ -12,8 +12,6 @@ pub struct MySqlBackend;
 
 impl Backend for MySqlBackend {
     const QUOTE: char = '`';
-    const IS_MYSQL: bool = true;
-
     type Bindings = MySqlBindings;
 
     fn query_result() -> TokenStream {

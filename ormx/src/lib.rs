@@ -9,7 +9,7 @@
 //! # Example: Table
 //! ```rust,ignore
 //! #[derive(ormx::Table)]
-//! #[ormx(table = "users", id = user_id, insertable)]
+//! #[ormx(table = "users", id = user_id, insertable, deletable)]
 //! struct User {
 //!     #[ormx(column = "id")]
 //!     user_id: u32,

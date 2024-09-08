@@ -12,8 +12,6 @@ pub struct MariaBackend;
 
 impl Backend for MariaBackend {
     const QUOTE: char = '`';
-    const IS_MYSQL: bool = true;
-
     type Bindings = MariaBindings;
 
     fn query_result() -> TokenStream {
