@@ -5,11 +5,15 @@ use proc_macro2::TokenStream;
 use crate::{patch::Patch, table::Table};
 
 mod common;
+#[cfg(feature = "mariadb")]
+mod mariadb;
 #[cfg(feature = "mysql")]
 mod mysql;
 #[cfg(feature = "postgres")]
 mod postgres;
 
+#[cfg(feature = "mariadb")]
+pub type Implementation = mariadb::MariaBackend;
 #[cfg(feature = "mysql")]
 pub type Implementation = mysql::MySqlBackend;
 #[cfg(feature = "postgres")]
@@ -19,10 +23,12 @@ compile_error!("sqlite is currently not supported");
 
 pub trait Backend: Sized + Clone {
     const QUOTE: char;
-    /// TODO: benchmark HashSet vs linear search
-    const RESERVED_IDENTS: &'static [&'static str];
+    const IS_MYSQL: bool = false;
 
     type Bindings: Iterator<Item = Cow<'static, str>> + Default;
+
+    /// Returns the type used to return query results, e.g `sqlx::postgres::PgQueryResult`
+    fn query_result() -> TokenStream;
 
     /// Generate an `impl <Table>` block, containing getter methods
     fn impl_getters(table: &Table<Self>) -> TokenStream {

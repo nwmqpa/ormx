@@ -23,7 +23,7 @@ pub(crate) fn getters<B: Backend>(table: &Table<B>) -> TokenStream {
         let sql = format!(
             "SELECT {} FROM {} WHERE {} = {}",
             column_list,
-            table.table,
+            table.name(),
             field.column(),
             B::Bindings::default().next().unwrap()
         );
@@ -103,7 +103,7 @@ pub fn setters<B: Backend>(table: &Table<B>) -> TokenStream {
             let mut bindings = B::Bindings::default();
             let sql = format!(
                 "UPDATE {} SET {} = {} WHERE {} = {}",
-                table.table,
+                table.name(),
                 field.column(),
                 bindings.next().unwrap(),
                 table.id.column(),
@@ -171,7 +171,6 @@ pub(crate) fn impl_patch<B: Backend>(patch: &Patch) -> TokenStream {
         bindings.next().unwrap()
     );
 
-    let box_future = crate::utils::box_future();
     quote! {
         impl ormx::Patch for #patch_ident {
             type Table = #table_path;
@@ -180,17 +179,15 @@ pub(crate) fn impl_patch<B: Backend>(patch: &Patch) -> TokenStream {
                 #( entity.#field_idents = self.#field_idents; )*
             }
 
-            fn patch_row<'a, 'c: 'a>(
+            async fn patch_row<'a, 'c: 'a>(
                 &'a self,
                 db: impl sqlx::Executor<'c, Database = ormx::Db> + 'a,
                 id: <Self::Table as ormx::Table>::Id,
-            ) -> #box_future<'a, sqlx::Result<()>> {
-                Box::pin(async move {
-                    sqlx::query!(#sql, #( self.#query_args, )* id)
-                        .execute(db)
-                        .await?;
-                    Ok(())
-                })
+            ) -> sqlx::Result<()> {
+                sqlx::query!(#sql, #( self.#query_args, )* id)
+                    .execute(db)
+                    .await?;
+                Ok(())
             }
         }
     }

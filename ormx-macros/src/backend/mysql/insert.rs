@@ -15,29 +15,28 @@ pub fn impl_insert(table: &Table<MySqlBackend>) -> TokenStream {
     };
 
     let table_ident = &table.ident;
-    let box_future = quote!(ormx::exports::futures::future::BoxFuture);
 
-    let insert = insert(&table);
-    let query_id = query_id(&table);
-    let query_default = query_default(&table);
-    let construct_row = construct_row(&table);
+    let insert = insert(table);
+    let query_id = query_id(table);
+    let query_default = query_default(table);
+    let construct_row = construct_row(table);
 
     quote! {
         impl ormx::Insert for #insert_ident {
             type Table = #table_ident;
 
-            fn insert<'a, 'c: 'a>(
+            async fn insert<'a, 'c: 'a>(
                 self,
-                db: impl sqlx::Executor<'c, Database = ormx::Db> + 'a,
-            ) -> #box_future<'a, sqlx::Result<Self::Table>> {
-                Box::pin(async move {
-                    let mut tx = db.begin().await?;
-                    #insert
-                    #query_id
-                    #query_default
-                    tx.commit().await?;
-                    Ok(#construct_row)
-                })
+                db: &'c mut sqlx::MySqlConnection,
+            ) -> sqlx::Result<Self::Table> {
+                use sqlx::Connection;
+
+                let mut tx = db.begin().await?;
+                #insert
+                #query_id
+                #query_default
+                tx.commit().await?;
+                Ok(#construct_row)
             }
         }
     }
@@ -81,13 +80,13 @@ fn query_default(table: &Table<MySqlBackend>) -> TokenStream {
     let query_default_sql = format!(
         "SELECT {} FROM {} WHERE {} = ?",
         default_fields.map(TableField::fmt_for_select).join(", "),
-        table.table,
+        table.name(),
         table.id.column()
     );
 
     quote! {
         let _generated = sqlx::query!(#query_default_sql, _id)
-            .fetch_one(&mut tx)
+            .fetch_one(&mut *tx)
             .await?;
     }
 }
@@ -99,14 +98,14 @@ fn insert(table: &Table<MySqlBackend>) -> TokenStream {
 
     let insert_sql = format!(
         "INSERT INTO {} ({}) VALUES ({})",
-        table.table,
+        table.name(),
         insert_fields.iter().map(|field| field.column()).join(", "),
         MySqlBindings.take(insert_fields.len()).join(", ")
     );
 
     quote! {
         sqlx::query!(#insert_sql, #( self.#insert_field_idents, )*)
-            .execute(&mut tx)
+            .execute(&mut *tx)
             .await?;
     }
 }
@@ -121,7 +120,7 @@ fn query_id(table: &Table<MySqlBackend>) -> TokenStream {
     match table.id.default {
         true => quote! {
             let _id = sqlx::query!("SELECT LAST_INSERT_ID() AS id")
-                .fetch_one(&mut tx)
+                .fetch_one(&mut *tx)
                 .await?
                 .id;
         },

@@ -47,31 +47,27 @@ pub fn impl_delete<B: Backend>(table: &Table<B>) -> TokenStream {
 }
 
 fn get<B: Backend>(table: &Table<B>, column_list: &str) -> TokenStream {
-    let box_future = crate::utils::box_future();
     let get_sql = format!(
         "SELECT {} FROM {} WHERE {} = {}",
         column_list,
-        table.table,
+        table.name(),
         table.id.column(),
         B::Bindings::default().next().unwrap()
     );
 
     quote! {
-        fn get<'a, 'c: 'a>(
+        async fn get<'a, 'c: 'a>(
             db: impl sqlx::Executor<'c, Database = ormx::Db> + 'a,
             id: Self::Id,
-        ) -> #box_future<'a, sqlx::Result<Self>> {
-            Box::pin(async move {
-                sqlx::query_as!(Self, #get_sql, id)
-                    .fetch_one(db)
-                    .await
-            })
+        ) -> sqlx::Result<Self> {
+            sqlx::query_as!(Self, #get_sql, id)
+                .fetch_one(db)
+                .await
         }
     }
 }
 
 fn update<B: Backend>(table: &Table<B>) -> TokenStream {
-    let box_future = crate::utils::box_future();
     let mut bindings = B::Bindings::default();
     let mut assignments = vec![];
     for field in table.fields_except_id() {
@@ -82,7 +78,7 @@ fn update<B: Backend>(table: &Table<B>) -> TokenStream {
 
     let update_sql = format!(
         "UPDATE {} SET {} WHERE {} = {}",
-        table.table,
+        table.name(),
         assignments,
         table.id.column(),
         bindings.next().unwrap()
@@ -91,28 +87,34 @@ fn update<B: Backend>(table: &Table<B>) -> TokenStream {
     let other_arguments = table.fields_except_id().map(TableField::fmt_as_argument);
 
     quote! {
-        fn update<'a, 'c: 'a>(
+        async fn update<'a, 'c: 'a>(
             &'a self,
             db: impl sqlx::Executor<'c, Database = ormx::Db> + 'a,
-        ) -> #box_future<'a, sqlx::Result<()>> {
-            Box::pin(async move {
-                sqlx::query!(#update_sql, #( #other_arguments, )* self.#id_argument)
-                    .execute(db)
-                    .await?;
-                Ok(())
-            })
+        ) -> sqlx::Result<()> {
+            sqlx::query!(#update_sql, #( #other_arguments, )* self.#id_argument)
+                .execute(db)
+                .await?;
+            Ok(())
         }
     }
 }
 
 fn stream_all<B: Backend>(table: &Table<B>, column_list: &str) -> TokenStream {
-    let box_stream = crate::utils::box_stream();
-    let all_sql = format!("SELECT {} FROM {}", column_list, table.table);
+    let return_type = crate::utils::stream!(sqlx::Result<Self>);
+    let order_by = match &table.order_by {
+        None => &format!("{} DESC", table.id.column()),
+        Some(by) => by,
+    };
+    let all_sql = format!(
+        "SELECT {} FROM {} ORDER BY {order_by}",
+        column_list,
+        table.name()
+    );
 
     quote! {
         fn stream_all<'a, 'c: 'a>(
             db: impl sqlx::Executor<'c, Database = ormx::Db> + 'a,
-        ) -> #box_stream<'a, sqlx::Result<Self>> {
+        ) -> #return_type + 'a {
             sqlx::query_as!(Self, #all_sql)
                 .fetch(db)
         }
@@ -120,12 +122,16 @@ fn stream_all<B: Backend>(table: &Table<B>, column_list: &str) -> TokenStream {
 }
 
 fn stream_all_paginated<B: Backend>(table: &Table<B>, column_list: &str) -> TokenStream {
-    let box_stream = crate::utils::box_stream();
+    let return_type = crate::utils::stream!(sqlx::Result<Self>);
     let mut bindings = B::Bindings::default();
+    let order_by = match &table.order_by {
+        None => &format!("{} DESC", table.id.column()),
+        Some(by) => by,
+    };
     let all_sql = format!(
-        "SELECT {} FROM {} LIMIT {} OFFSET {}",
+        "SELECT {} FROM {} ORDER BY {order_by} LIMIT {} OFFSET {} ",
         column_list,
-        table.table,
+        table.name(),
         bindings.next().unwrap(),
         bindings.next().unwrap()
     );
@@ -135,7 +141,7 @@ fn stream_all_paginated<B: Backend>(table: &Table<B>, column_list: &str) -> Toke
             db: impl sqlx::Executor<'c, Database = ormx::Db> + 'a,
             offset: i64,
             limit: i64,
-        ) -> #box_stream<'a, sqlx::Result<Self>> {
+        ) -> #return_type + 'a {
             sqlx::query_as!(Self, #all_sql, limit, offset)
                 .fetch(db)
         }
@@ -143,38 +149,30 @@ fn stream_all_paginated<B: Backend>(table: &Table<B>, column_list: &str) -> Toke
 }
 
 fn delete<B: Backend>(table: &Table<B>) -> TokenStream {
-    let box_future = crate::utils::box_future();
     let id_ty = &table.id.ty;
     let delete_sql = format!(
         "DELETE FROM {} WHERE {} = {}",
-        table.table,
+        table.name(),
         table.id.column(),
         B::Bindings::default().next().unwrap()
     );
-    #[cfg(feature = "mysql")]
-    let result_import = quote!(sqlx::mysql::MySqlQueryResult);
-    #[cfg(feature = "postgres")]
-    let result_import = quote!(sqlx::postgres::PgQueryResult);
-    #[cfg(feature = "sqlite")]
-    let result_import = quote!(sqlx::sqlite::SqliteQueryResult);
+    let query_result = B::query_result();
 
     quote! {
-        fn delete_row<'a, 'c: 'a>(
+        async fn delete_row<'a, 'c: 'a>(
             db: impl sqlx::Executor<'c, Database = ormx::Db> + 'a,
             id: #id_ty
-        ) -> #box_future<'a, sqlx::Result<()>> {
-            use #result_import;
+        ) -> sqlx::Result<()> {
+            use #query_result;
 
-            Box::pin(async move {
-                let result = sqlx::query!(#delete_sql, id)
-                    .execute(db)
-                    .await?;
-                if result.rows_affected() == 0 {
-                    Err(sqlx::Error::RowNotFound)
-                } else {
-                    Ok(())
-                }
-            })
+            let result = sqlx::query!(#delete_sql, id)
+                .execute(db)
+                .await?;
+            if result.rows_affected() == 0 {
+                Err(sqlx::Error::RowNotFound)
+            } else {
+                Ok(())
+            }
         }
     }
 }

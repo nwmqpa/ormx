@@ -1,8 +1,8 @@
 [package]
 name = "ormx"
-version = "0.10.0"
+version = "0.11.0"
 authors = ["Moritz Bischof"]
-edition = "2018"
+edition = "2021"
 license = "MIT"
 description = "lightweight procedural macros bringing orm-like features to sqlx"
 homepage = "https://github.com/NyxCode/ormx"
@@ -14,17 +14,18 @@ targets = ["x86_64-unknown-linux-gnu"]
 
 [features]
 mysql = ["sqlx/mysql", "ormx-macros/mysql"]
+mariadb = ["sqlx/mysql", "ormx-macros/mariadb"]
 sqlite = ["sqlx/sqlite", "ormx-macros/sqlite"]
 postgres = ["sqlx/postgres", "ormx-macros/postgres"]
 
 _docs-rs-build = ["sqlx/runtime-tokio-rustls", "postgres"]
 
 [dependencies]
-ormx-macros = { path = "../ormx-macros", version = "0.10" }
+ormx-macros = { path = "../ormx-macros", version = "=0.11.0" }
 futures = "0.3"
 
 [dependencies.sqlx]
-version = "0.6"
+version = "0.8"
 default-features = false
 features = ["macros"]
 

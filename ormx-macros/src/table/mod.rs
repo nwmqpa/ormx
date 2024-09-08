@@ -1,9 +1,9 @@
-use std::{borrow::Cow, convert::TryFrom, marker::PhantomData};
+use std::{convert::TryFrom, marker::PhantomData};
 
 use itertools::Itertools;
 use proc_macro2::{Ident, Span, TokenStream};
-use quote::quote;
-use syn::{DeriveInput, Result, Type, Visibility, Attribute};
+use quote::{quote, ToTokens};
+use syn::{Attribute, DeriveInput, Result, Type, Visibility};
 
 use crate::{
     attrs::{Getter, Insertable},
@@ -15,20 +15,20 @@ mod parse;
 pub struct Table<B: Backend> {
     pub ident: Ident,
     pub vis: Visibility,
-    pub table: String,
+    table: String,
     pub id: TableField<B>,
     pub fields: Vec<TableField<B>>,
     pub insertable: Option<Insertable>,
-    pub deletable: bool
+    pub deletable: bool,
+    pub order_by: Option<String>,
 }
 
 #[derive(Clone)]
 pub struct TableField<B: Backend> {
     pub field: Ident,
     pub ty: Type,
-    pub column_name: String,
+    column_name: String,
     pub custom_type: bool,
-    pub reserved_ident: bool,
     pub default: bool,
     pub get_one: Option<Getter>,
     pub get_optional: Option<Getter>,
@@ -59,22 +59,28 @@ impl<B: Backend> Table<B> {
             .map(|field| field.fmt_for_select())
             .join(", ")
     }
+
+    pub fn name(&self) -> String {
+        let q = B::QUOTE;
+        format!("{q}{}{q}", self.table)
+    }
 }
 
 impl<B: Backend> TableField<B> {
     pub fn fmt_for_select(&self) -> String {
+        let q = B::QUOTE;
+
         if self.custom_type {
             format!(
-                "{} AS {}{}: _{}",
-                self.column(),
-                B::QUOTE,
-                self.field,
-                B::QUOTE
+                "{q}{}{q} AS {q}{}!: {}{q}",
+                self.column_name,
+                self.field.to_string(),
+                self.ty.to_token_stream()
             )
         } else if self.field == self.column_name {
-            self.column().into()
+            self.column()
         } else {
-            format!("{} AS {}", self.column(), self.field)
+            format!("{q}{}{q} AS {q}{}{q}", self.column_name, self.field)
         }
     }
 
@@ -95,12 +101,9 @@ impl<B: Backend> TableField<B> {
         out
     }
 
-    pub fn column(&self) -> Cow<str> {
-        if self.reserved_ident {
-            format!("{}{}{}", B::QUOTE, self.column_name, B::QUOTE).into()
-        } else {
-            Cow::Borrowed(&self.column_name)
-        }
+    pub fn column(&self) -> String {
+        let q = B::QUOTE;
+        format!("{q}{}{q}", self.column_name)
     }
 }
 

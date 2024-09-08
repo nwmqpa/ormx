@@ -12,7 +12,9 @@ pub enum TableAttr {
     // insertable [= [<attribute>]* <ident>]?
     Insertable(Option<Insertable>),
     // deletable
-    Deletable(())
+    Deletable(()),
+    // order_by = <string>
+    OrderBy(String),
 }
 
 pub struct Insertable {
@@ -38,7 +40,7 @@ pub enum TableFieldAttr {
     // by_ref
     ByRef(()),
     // insert_attribute = <attribute>
-    InsertAttr(AnyAttribute)
+    InsertAttr(AnyAttribute),
 }
 
 #[derive(Clone)]
@@ -92,7 +94,7 @@ impl Parse for Insertable {
 pub fn parse_attrs<A: Parse>(attrs: &[Attribute]) -> Result<Vec<A>> {
     let attrs = attrs
         .iter()
-        .filter(|a| a.path.is_ident("ormx"))
+        .filter(|a| a.path().is_ident("ormx"))
         .map(|a| a.parse_args_with(Punctuated::<A, Token![,]>::parse_terminated))
         .collect::<Result<Vec<_>>>()?
         .into_iter()
@@ -144,7 +146,8 @@ impl_parse!(TableAttr {
     "table" => Table(= String),
     "id" => Id(= Ident),
     "insertable" => Insertable((= Insertable)?),
-    "deletable" => Deletable()
+    "deletable" => Deletable(),
+    "order_by" => OrderBy(= String)
 });
 
 impl_parse!(TableFieldAttr {
@@ -172,7 +175,7 @@ impl_parse!(PatchFieldAttr {
 });
 
 pub struct AnyAttribute(pub Vec<Attribute>);
-impl syn::parse::Parse for AnyAttribute {
+impl Parse for AnyAttribute {
     fn parse(input: ParseStream) -> Result<Self> {
         input.call(Attribute::parse_outer).map(Self)
     }

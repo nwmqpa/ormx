@@ -8,13 +8,13 @@ use crate::{backend::Backend, table::Table};
 mod insert;
 
 #[derive(Clone)]
-pub struct MySqlBackend;
+pub struct MariaBackend;
 
-impl Backend for MySqlBackend {
+impl Backend for MariaBackend {
     const QUOTE: char = '`';
     const IS_MYSQL: bool = true;
 
-    type Bindings = MySqlBindings;
+    type Bindings = MariaBindings;
 
     fn query_result() -> TokenStream {
         quote!(sqlx::mysql::MySqlQueryResult)
@@ -26,9 +26,9 @@ impl Backend for MySqlBackend {
 }
 
 #[derive(Default)]
-pub struct MySqlBindings;
+pub struct MariaBindings;
 
-impl Iterator for MySqlBindings {
+impl Iterator for MariaBindings {
     type Item = Cow<'static, str>;
 
     fn next(&mut self) -> Option<Self::Item> {

@@ -24,7 +24,7 @@ async fn main() -> anyhow::Result<()> {
         email: "moritz.bischof1@gmail.com".to_owned(),
         disabled: None,
     }
-    .insert(&mut *db.acquire().await?)
+    .insert(&db)
     .await?;
 
     log::info!("update a single field");
