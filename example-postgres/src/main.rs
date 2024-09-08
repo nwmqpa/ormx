@@ -1,102 +1,47 @@
 use chrono::{NaiveDateTime, Utc};
-use log::LevelFilter;
+use futures_util::TryStreamExt;
+use log::{info, LevelFilter};
 use ormx::{Delete, Insert, Table};
 use sqlx::PgPool;
 
 mod query2;
 
-#[tokio::main]
-async fn main() -> anyhow::Result<()> {
-    dotenv::dotenv().ok();
-    env_logger::builder()
-        .filter_level(LevelFilter::Debug)
-        .init();
-
-    let db = PgPool::connect(&dotenv::var("DATABASE_URL")?).await?;
-
-    log::info!("insert a few new rows into the database");
-    let mut new = InsertUser {
-        user_id: 1,
-        first_name: "Moritz".to_owned(),
-        last_name: "Bischof".to_owned(),
-        email: "moritz.bischof1@gmail.com".to_owned(),
-        disabled: None,
-        role: Role::User,
-        ty: Some(AccountType::Normal),
-    }
-    .insert(&db)
-    .await?;
-    InsertUser {
-        user_id: 2,
-        first_name: "Dylan".to_owned(),
-        last_name: "Thomas".to_owned(),
-        email: "dylan.thomas@gmail.com".to_owned(),
-        disabled: Some("email not verified".to_owned()),
-        role: Role::Admin,
-        ty: None,
-    }
-    .insert(&db)
-    .await?;
-
-    log::info!("update a single field");
-    new.set_last_login(&db, Some(Utc::now().naive_utc()))
-        .await?;
-
-    log::info!("update all fields at once");
-    new.email = "asdf".to_owned();
-    new.update(&db).await?;
-
-    log::info!("apply a patch to the user");
-    new.patch(
-        &db,
-        UpdateUser {
-            first_name: "NewFirstName".to_owned(),
-            last_name: "NewLastName".to_owned(),
-            disabled: Some("Reason".to_owned()),
-            role: Role::Admin,
-        },
-    )
-    .await?;
-
-    log::info!("reload the user, in case it has been modified");
-    new.email.clear();
-    new.reload(&db).await?;
-
-    log::info!("use the improved query macro for searching users");
-    let search_result = query2::query_users(&db, Some("NewFirstName"), None).await?;
-    log::info!("search result: {:?}", search_result);
-
-    log::info!("load all users in the order specified by the 'order_by' attribute");
-    let all = User::all_paginated(&db, 0, 100).await?;
-    log::info!("all users: {all:?}");
-
-    log::info!("delete the user from the database");
-    new.delete(&db).await?;
-
-    Ok(())
-}
-
 #[derive(Debug, ormx::Table)]
 #[ormx(table = "users", id = user_id, insertable, deletable, order_by = "email ASC")]
 struct User {
-    // map this field to the column "id"
-    #[ormx(column = "id")]
-    #[ormx(get_one = get_by_user_id)]
+    // `#[ormx(default)]` indicates that the database generates a value for us.
+    // `#[ormx(get_one = ..)]` generates `User::get_by_user_id(db, id: i32) -> Result<User>` for us
+    #[ormx(column = "id", default, get_one = get_by_user_id)] // map this field to the column "id"
     user_id: i32,
+
+    // just some normal, 'NOT NULL' columns
     first_name: String,
     last_name: String,
-    // generate `User::by_email(&str) -> Result<Option<Self>>`
+    disabled: Option<String>,
+
+    // generates `User::by_email(&str) -> Result<Option<Self>>`
+    // unlike `#[ormx(get_one = .. )]`, `by_email` will return `None` instead of an error if no record is found.
     #[ormx(get_optional(&str))]
     email: String,
+
+    // custom types need to be annotated with `#[ormx(custom_type)]`
     #[ormx(custom_type)]
     role: Role,
+
+    // they can, of course, also be nullable
     #[ormx(column = "type", custom_type)]
     ty: Option<AccountType>,
+
+    // the database can also provide a default value for them.
+    // `#[ormx(set)]` generates `User::set_group(&mut self, g: UserGroup) -> Result` for us
     #[ormx(custom_type, default, set)]
     group: UserGroup,
-    disabled: Option<String>,
-    // don't include this field into `InsertUser` since it has a default value
-    // generate `User::set_last_login(Option<NaiveDateTime>) -> Result<()>`
+
+    // besides enums, composite/record types are also supported
+    #[ormx(custom_type, default)]
+    favourite_color: Option<Color>,
+
+    // generates `User::set_last_login(&mut self, Option<NaiveDateTime>) -> Result`
     #[ormx(default, set)]
     last_login: Option<NaiveDateTime>,
 }
@@ -111,6 +56,8 @@ struct UpdateUser {
     #[ormx(custom_type)]
     role: Role,
 }
+
+// these are all enums, created using `CREATE TYPE .. AS ENUM (..);`
 
 #[derive(Debug, Copy, Clone, sqlx::Type)]
 #[sqlx(type_name = "user_role")]
@@ -137,10 +84,98 @@ enum UserGroup {
     Other,
 }
 
+// PostgreSQL also supports composite/record types
+
+#[derive(Debug, Copy, Clone, sqlx::Type)]
+#[sqlx(type_name = "color")]
+struct Color {
+    red: i32,
+    green: i32,
+    blue: i32,
+}
+
 #[derive(Debug, ormx::Table)]
 #[ormx(table = "test", id = id, insertable)]
 struct Test {
     id: i32,
     #[ormx(by_ref)]
     rows: Vec<String>,
+}
+
+#[tokio::main]
+async fn main() -> anyhow::Result<()> {
+    dotenv::dotenv().ok();
+    env_logger::builder().filter_level(LevelFilter::Info).init();
+
+    let pool = PgPool::connect(&dotenv::var("DATABASE_URL")?).await?;
+    let mut tx = pool.begin().await?;
+
+
+    info!("insert a new row into the database..");
+    let mut new = InsertUser {
+        first_name: "Moritz".to_owned(),
+        last_name: "Bischof".to_owned(),
+        email: "moritz.bischof1@gmail.com".to_owned(),
+        disabled: None,
+        role: Role::User,
+        ty: Some(AccountType::Normal),
+    }
+    .insert(&mut *tx)
+    .await?;
+    info!("after inserting a row, ormx loads the database-generated columns for us, including the ID ({})", new.user_id);
+
+
+    info!("update a single field at a time, each in its own query..");
+    new.set_last_login(&mut *tx, Some(Utc::now().naive_utc()))
+        .await?;
+    new.set_group(&mut *tx, UserGroup::Global).await?;
+
+
+    info!("update all fields at once..");
+    new.email = "asdf".to_owned();
+    new.favourite_color = Some(Color {
+        red: 255,
+        green: 0,
+        blue: 0,
+    });
+    new.update(&mut *tx).await?;
+
+
+    info!("apply a patch to the user..");
+    new.patch(
+        &mut *tx,
+        UpdateUser {
+            first_name: "NewFirstName".to_owned(),
+            last_name: "NewLastName".to_owned(),
+            disabled: Some("Reason".to_owned()),
+            role: Role::Admin,
+        },
+    )
+    .await?;
+
+
+    info!("reload the user, in case it has been modified..");
+    new.email.clear();
+    new.reload(&mut *tx).await?;
+
+
+    info!("use the improved query macro for searching users..");
+    let search_result = query2::query_users(&mut *tx, Some("NewFirstName"), None).await?;
+    info!("found {} matching users", search_result.len());
+
+
+    info!("load all users in the order specified by the 'order_by' attribute..");
+    User::stream_all_paginated(&mut *tx, 0, 100)
+        .try_for_each(|u| async move {
+            info!("- user_id = {}", u.user_id);
+            Ok(())
+        })
+        .await?;
+
+
+    info!("delete the user from the database..");
+    new.delete(&mut *tx).await?;
+
+
+    Ok(())
 }
