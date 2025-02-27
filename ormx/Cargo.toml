@@ -17,6 +17,7 @@ mysql = ["sqlx/mysql", "ormx-macros/mysql"]
 mariadb = ["sqlx/mysql", "ormx-macros/mariadb"]
 sqlite = ["sqlx/sqlite", "ormx-macros/sqlite"]
 postgres = ["sqlx/postgres", "ormx-macros/postgres"]
+serde = ["ormx-macros/serde"]
 
 _docs-rs-build = ["sqlx/runtime-tokio-rustls", "postgres"]
 

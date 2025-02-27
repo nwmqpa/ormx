@@ -1,3 +1,9 @@
 [workspace]
-members = ["ormx-macros", "ormx", "example-postgres", "example-mariadb", "example-mysql"]
+members = [
+    "ormx-macros",
+    "ormx",
+    "example-postgres",
+    "example-mariadb",
+    "example-mysql",
+]
 resolver = "2"

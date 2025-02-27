@@ -206,9 +206,19 @@ pub(crate) fn insert_struct<B: Backend>(table: &Table<B>) -> TokenStream {
         quote!(#(#attrs)* #vis #ident: #ty)
     });
 
+    let serde_derive = if cfg!(feature = "serde") {
+        quote! {
+            #[derive(::serde::Serialize, ::serde::Deserialize)]
+        }
+    } else {
+        quote! {}
+    };
+
     let from_impl = impl_from_for_insert_struct(table, ident);
     quote! {
         #(#attrs)*
+        #[derive(Debug, Clone)]
+        #serde_derive
         #vis struct #ident {
             #( #insert_fields, )*
         }

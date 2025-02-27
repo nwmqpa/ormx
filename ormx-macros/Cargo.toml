@@ -15,6 +15,7 @@ sqlite = []
 mysql = []
 mariadb = []
 postgres = []
+serde = []
 
 [dependencies]
 itertools = "0.13.0"
