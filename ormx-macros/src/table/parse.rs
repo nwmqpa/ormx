@@ -87,7 +87,7 @@ impl<B: Backend> TryFrom<&DeriveInput> for Table<B> {
                 TableAttr::Table(x) => set_once(&mut table, x)?,
                 TableAttr::Id(x) => set_once(&mut id, x)?,
                 TableAttr::Insertable(x) => {
-                    let default = move || Insertable {
+                    let default = || Insertable {
                         attrs: vec![],
                         ident: Ident::new(&format!("Insert{}", value.ident), Span::call_site()),
                     };
